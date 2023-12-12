@@ -9,6 +9,8 @@ class CreateClientApplications < ActiveRecord::Migration[7.0]
       t.string :refresh_token
       t.string :redirect_uris, array: true
       t.datetime :expires_in
+      t.string :scopes, array: true
+      t.string :grant_type
 
       t.timestamps
     end
