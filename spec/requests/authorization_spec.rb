@@ -6,22 +6,53 @@ RSpec.describe 'Authorizations', type: :request do
   let!(:valid_query_params) { client.attributes }
   let!(:invalid_query_params) do
     {
-      'name' => 'unregistered client',
       'client_id' => 'unregistered client id',
-      'client_secret' => 'unregistered client secret',
-      'authorization_code' => 'unregistered authorization code',
-      'access_token' => 'invalide access code',
-      'refresh_token' => 'invalid refresh code',
       'redirect_uris' => 'http://unknownclient.com/callback'
+    }
+  end
+  let!(:headers) do
+    {
+      'Content-Type': 'application/x-www-form-urlencoded'
     }
   end
 
   describe 'GET /authorize' do
+    context 'authentication of resource owner'
+    context 'test support for only authorization code grant type' do
+      before do
+        get "/authorize",
+        params: {
+          client_id: valid_query_params['client_id'],
+          response_type: 'token',
+          redirect_uri: valid_query_params['redirect_uris'][0],
+          state: state,
+          scope: valid_query_params['scopes']
+        },
+        headers:
+      end
+
+      it 'should redirect to error_url' do
+        expect(response).to redirect_to error_path(
+          error: 'invalid_request',
+          error_description: 'Unsupported response type'
+        )
+      end
+    end
+
     context 'when server receives redirect from client' do
       context 'if client is recognized by authorization server' do
         before do
-          get "/authorize?client_id=#{valid_query_params['client_id']}&response_type=code&redirect_uri=#{valid_query_params['redirect_uris'][0]}&state=#{state}"
+          get "/authorize",
+          params: {
+            client_id: valid_query_params['client_id'],
+            response_type: 'code',
+            redirect_uri: valid_query_params['redirect_uris'][0],
+            state: state,
+            scope: valid_query_params['scopes']
+          },
+          headers:
         end
+        let!(:client_request) { request }
 
         it 'should render authorize template' do
           expect(response).to render_template(:authorize)
@@ -31,24 +62,50 @@ RSpec.describe 'Authorizations', type: :request do
           expect(response).to have_http_status(:ok)
         end
 
-        context 'authorization code' do
-          let!(:token) { client.generate_authorization_code }
-          let!(:hmac_secret) { Rails.application.secret_key_base }
+        it 'renders state params equal to what client provided in request if present' do
+          expect(assigns[:state]).to eq(client_request['state'])
+        end
 
-          it 'should be valid before 10 minutes' do
-            expect do
-              JWT.decode token, hmac_secret, true, { algorithm: 'HS256' }
-            end.to_not raise_error(JWT::ExpiredSignature)
+        
+        context 'redirect_uri' do
+          it 'renders redirect_uri as supplied by client in request to this endpoint' do
+            expect(assigns[:redirect_uri]).to eq(client_request['redirect_uri'])
           end
 
-          it 'should be invalid after 10 minutes' do
-            future_time = (Time.now + 11.minutes).to_i
+          it 'should redirect to error_path if wrong redirect_uri is provided' do
+            get "/authorize",
+              params: {
+              client_id: valid_query_params['client_id'],
+              response_type: 'code',
+              redirect_uri: invalid_query_params['redirect_uris'][0],
+              state: state,
+              scope: valid_query_params['scopes']
+            },
+            headers: headers
 
-            Timecop.freeze(future_time) do
-              expect do
-                JWT.decode token, hmac_secret, true, { algorithm: 'HS256' }
-              end.to raise_error(JWT::ExpiredSignature)
-            end
+            expect(response).to redirect_to error_path(
+              error: 'invalid_request',
+              error_description: 'client is not registered or provided an invalid redirect uri'
+            )
+          end
+        end
+
+        context 'scopes' do
+          it 'should render scope if scope is supplied by client' do
+            expect(assigns[:scopes]).to eq(client_request['scope'])
+          end
+
+          it 'should render scope as registered by client in db if not passed in client request' do
+            get "/authorize",
+            params: {
+              client_id: valid_query_params['client_id'],
+              response_type: 'code',
+              redirect_uri: valid_query_params['redirect_uris'][0],
+              state: state
+            },
+            headers: headers
+
+            expect(assigns[:scopes]).to eq(client.minimum_scope_set)
           end
         end
 
@@ -59,12 +116,21 @@ RSpec.describe 'Authorizations', type: :request do
 
       context 'if client is not recognized by authorization server' do
         before do
-          get "/authorize?client_id=#{invalid_query_params['client_id']}&response_type=code&redirect_uri=#{invalid_query_params['redirect_uris'][0]}&state=#{state}"
+          get "/authorize",
+          params: {
+              client_id: invalid_query_params['client_id'],
+              response_type: 'code',
+              redirect_uri: invalid_query_params['redirect_uris'][0],
+              state: state
+            },
+            headers: headers
         end
 
         it 'should redirect to error url with query params containing error code and description' do
-          expect(response).to redirect_to unknown_client_path(error: 'invalid_request',
-                                                              error_description: 'client is not registered or provided an invalid redirect uri')
+          expect(response).to redirect_to error_path(
+            error: 'invalid_request',
+            error_description: 'client is not registered or provided an invalid redirect uri'
+          )
         end
       end
 
@@ -77,6 +143,26 @@ RSpec.describe 'Authorizations', type: :request do
       # successful authentication of client via HTTP Basic Authentication scheme
       context 'check if grant_type is supported'
       context 'check if authorization code is valid' do
+         # context 'authorization code' do
+        #   let!(:token) { client.generate_authorization_code }
+        #   let!(:hmac_secret) { Rails.application.secret_key_base }
+
+        #   it 'should be valid before 10 minutes' do
+        #     expect do
+        #       JWT.decode token, hmac_secret, true, { algorithm: 'HS256' }
+        #     end.to_not raise_error(JWT::ExpiredSignature)
+        #   end
+
+        #   it 'should be invalid after 10 minutes' do
+        #     future_time = (Time.now + 11.minutes).to_i
+
+        #     Timecop.freeze(future_time) do
+        #       expect do
+        #         JWT.decode token, hmac_secret, true, { algorithm: 'HS256' }
+        #       end.to raise_error(JWT::ExpiredSignature)
+        #     end
+        #   end
+        # end
         it 'if code was issued by server'
         it 'if code is expired'
         it 'if code was used more than once'

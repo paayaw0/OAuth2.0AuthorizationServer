@@ -8,4 +8,8 @@ class ClientApplication < ApplicationRecord
   end
 
   def generate_access_and_refresh_tokens; end
+
+  def minimum_scope_set
+    scopes[0]
+  end
 end
