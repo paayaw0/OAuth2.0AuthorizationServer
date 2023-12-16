@@ -10,9 +10,12 @@ class AuthorizationController < ApplicationController
       client_application.update(authorization_code:)
       callback_url = redirect_uri + query_params
     else
-      # redirect with error code?
+      redirect_to unknown_client_url(error: 'invalid_request',
+                                     error_description: 'client is not registered or provided an invalid redirect uri')
     end
   end
 
   def approve; end
+
+  def unknown_client; end
 end

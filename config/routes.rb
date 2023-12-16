@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
   get '/authorize', to: 'authorization#authorize'
-  post '/approve', to: 'authorization#approve'
+  post '/token', to: 'authorization#approve'
+  get '/unknown_client', to: 'authorization#unknown_client'
 end
